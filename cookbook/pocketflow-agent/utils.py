@@ -1,15 +1,16 @@
-from openai import OpenAI
+import sys
+from pathlib import Path
 import os
 from duckduckgo_search import DDGS
-import requests
 
-def call_llm(prompt):    
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "your-api-key"))
-    r = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return r.choices[0].message.content
+# Add parent directory to path to import shared config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from llm_config_shared import call_llm as shared_call_llm, LLMConfig
+
+def call_llm(prompt, config: LLMConfig = None):
+    """Call LLM with prompt string"""
+    messages = [{"role": "user", "content": prompt}]
+    return shared_call_llm(messages, config)
 
 def search_web_duckduckgo(query):
     results = DDGS().text(query, max_results=5)
@@ -28,6 +29,7 @@ def search_web_brave(query):
         "x-subscription-token": api_key
     }
 
+    import requests
     response = requests.get(url, headers=headers)
 
     if response.status_code == 200:
@@ -39,10 +41,13 @@ def search_web_brave(query):
     return results_str
     
 if __name__ == "__main__":
+    config = LLMConfig()
+    
     print("## Testing call_llm")
     prompt = "In a few words, what is the meaning of life?"
     print(f"## Prompt: {prompt}")
-    response = call_llm(prompt)
+    print(f"## Using {config.provider} with {config.model}")
+    response = call_llm(prompt, config)
     print(f"## Response: {response}")
 
     print("## Testing search_web")

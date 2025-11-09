@@ -1,0 +1,304 @@
+"""
+Shared LLM Provider Configuration Module
+
+Place this file in the cookbook root directory and import it from individual examples.
+Examples can do: from sys import path; path.insert(0, '..'); from llm_config_shared import *
+"""
+
+import os
+import logging
+from typing import Optional, Dict, Any
+from enum import Enum
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+class LLMProvider(Enum):
+    """Supported LLM providers"""
+    OLLAMA = "ollama"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    AZURE = "azure"
+
+
+class LLMConfig:
+    """Configuration for LLM provider and model"""
+    
+    def __init__(
+        self,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        azure_api_version: Optional[str] = None,
+        **kwargs
+    ):
+        """
+        Initialize LLM configuration.
+        
+        Args:
+            provider: LLM provider (ollama, openai, anthropic, azure)
+            model: Model name/ID
+            api_key: API key for the provider
+            base_url: Base URL for the API endpoint
+            azure_api_version: Azure API version (default: 2024-02-15-preview)
+            **kwargs: Additional provider-specific parameters (temperature, max_tokens, etc.)
+        """
+        logger.debug(f"Initializing LLMConfig with provider={provider}, model={model}")
+        
+        self.provider = provider or os.getenv("LLM_PROVIDER", "ollama")
+        self.model = model or os.getenv("LLM_MODEL")
+        self.api_key = (api_key or os.getenv("LLM_API_KEY", "")).strip()
+        self.base_url = (base_url or os.getenv("LLM_BASE_URL", "")).strip()
+        self.azure_api_version = azure_api_version or os.getenv("AZURE_API_VERSION", "2024-02-15-preview")
+        self.temperature = self._validate_temperature(kwargs.get("temperature", 0.7))
+        self.max_tokens = self._validate_max_tokens(kwargs.get("max_tokens", 2048))
+        self.extra_params = {k: v for k, v in kwargs.items() 
+                            if k not in ["temperature", "max_tokens"]}
+        
+        logger.debug(f"Provider set to: {self.provider}, Temperature: {self.temperature}, Max tokens: {self.max_tokens}")
+        
+        self._set_provider_defaults()
+        self._validate_credentials()
+        
+        logger.info(f"LLMConfig initialized successfully - Provider: {self.provider}, Model: {self.model}")
+    
+    def _validate_temperature(self, temp: Any) -> float:
+        """Validate and constrain temperature value"""
+        try:
+            temp = float(temp)
+            if not 0.0 <= temp <= 2.0:
+                logger.warning(f"Temperature {temp} out of range [0.0, 2.0], clamping to valid range")
+                temp = max(0.0, min(2.0, temp))
+            return temp
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid temperature value {temp}, using default 0.7")
+            return 0.7
+
+    def _validate_max_tokens(self, tokens: Any) -> int:
+        """Validate and set max_tokens value"""
+        try:
+            tokens = int(tokens)
+            if tokens < 1:
+                logger.warning(f"max_tokens {tokens} must be >= 1, using default 2048")
+                return 2048
+            return tokens
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid max_tokens value {tokens}, using default 2048")
+            return 2048
+
+    def _set_provider_defaults(self) -> None:
+        """Set provider-specific default values"""
+        if self.provider == LLMProvider.OLLAMA.value:
+            self.base_url = self.base_url or "http://localhost:11434/v1"
+            self.api_key = self.api_key or "ollama"
+            self.model = self.model or "llama3.2:3b"
+            logger.debug(f"Ollama defaults - URL: {self.base_url}, Model: {self.model}")
+        
+        elif self.provider == LLMProvider.OPENAI.value:
+            self.base_url = self.base_url or "https://api.openai.com/v1"
+            self.api_key = self.api_key or os.getenv("OPENAI_API_KEY", "")
+            self.model = self.model or "gpt-4o-mini"
+            logger.debug(f"OpenAI defaults - URL: {self.base_url}, Model: {self.model}")
+        
+        elif self.provider == LLMProvider.ANTHROPIC.value:
+            self.api_key = self.api_key or os.getenv("ANTHROPIC_API_KEY", "")
+            self.model = self.model or "claude-3-5-sonnet-20241022"
+            logger.debug(f"Anthropic defaults - Model: {self.model}")
+        
+        elif self.provider == LLMProvider.AZURE.value:
+            self.base_url = self.base_url or os.getenv("AZURE_ENDPOINT", "")
+            self.api_key = self.api_key or os.getenv("AZURE_API_KEY", "")
+            self.model = self.model or "gpt-4"
+            logger.debug(f"Azure defaults - Endpoint: {self.base_url}, Model: {self.model}")
+
+    def _validate_credentials(self) -> None:
+        """Validate that required credentials are present"""
+        logger.debug(f"Validating credentials for provider: {self.provider}")
+        
+        if self.provider == LLMProvider.OLLAMA.value:
+            # Ollama doesn't require real API key, but needs base_url
+            if not self.base_url:
+                logger.error("Ollama validation failed: base_url is empty")
+                raise ValueError(f"Ollama requires valid base_url (default: http://localhost:11434/v1)")
+            logger.debug("Ollama credentials valid")
+        
+        elif self.provider in [LLMProvider.OPENAI.value, LLMProvider.ANTHROPIC.value, LLMProvider.AZURE.value]:
+            if not self.api_key:
+                env_var = self._get_api_key_env_var()
+                logger.error(f"{self.provider.upper()} validation failed: API key is empty. Set {env_var}")
+                raise ValueError(
+                    f"{self.provider.upper()} requires API key. "
+                    f"Set {env_var} environment variable"
+                )
+            logger.debug(f"{self.provider.upper()} API key found")
+        
+        if not self.model:
+            logger.error(f"Model validation failed: model is empty for {self.provider}")
+            raise ValueError(f"Model not specified for provider {self.provider}")
+        
+        logger.debug(f"All credentials valid for {self.provider}")
+
+    def _get_api_key_env_var(self) -> str:
+        """Get the environment variable name for the API key"""
+        mapping = {
+            LLMProvider.OPENAI.value: "OPENAI_API_KEY",
+            LLMProvider.ANTHROPIC.value: "ANTHROPIC_API_KEY",
+            LLMProvider.AZURE.value: "AZURE_API_KEY",
+        }
+        return mapping.get(self.provider, "LLM_API_KEY")
+
+
+class LLMFactory:
+    """Factory for creating LLM clients"""
+    
+    @staticmethod
+    def create_client(config: LLMConfig):
+        """
+        Create appropriate LLM client based on provider.
+        
+        Args:
+            config: LLMConfig instance
+            
+        Returns:
+            LLM client instance
+        """
+        try:
+            if config.provider == LLMProvider.OLLAMA.value:
+                logger.info(f"Creating Ollama client - URL: {config.base_url}, Model: {config.model}")
+                from openai import OpenAI
+                return OpenAI(api_key=config.api_key, base_url=config.base_url)
+            
+            elif config.provider == LLMProvider.OPENAI.value:
+                logger.info(f"Creating OpenAI client - Model: {config.model}")
+                from openai import OpenAI
+                return OpenAI(api_key=config.api_key)
+            
+            elif config.provider == LLMProvider.ANTHROPIC.value:
+                logger.info(f"Creating Anthropic client - Model: {config.model}")
+                from anthropic import Anthropic
+                return Anthropic(api_key=config.api_key)
+            
+            elif config.provider == LLMProvider.AZURE.value:
+                logger.info(f"Creating Azure OpenAI client - Endpoint: {config.base_url}, Model: {config.model}")
+                from openai import AzureOpenAI
+                return AzureOpenAI(
+                    api_key=config.api_key,
+                    api_version=config.azure_api_version,
+                    azure_endpoint=config.base_url
+                )
+            
+            else:
+                logger.error(f"Unsupported provider: {config.provider}")
+                raise ValueError(f"Unsupported provider: {config.provider}")
+        except Exception as e:
+            logger.error(f"Failed to create client for {config.provider}: {str(e)}", exc_info=True)
+            raise
+
+
+def _prepare_anthropic_messages(messages: list) -> tuple[str, list]:
+    """
+    Convert OpenAI-style messages to Anthropic format.
+    Anthropic uses separate 'system' parameter for system messages.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+        
+    Returns:
+        Tuple of (system_prompt, messages_list)
+    """
+    system = None
+    anthropic_messages = []
+    
+    for msg in messages:
+        if msg.get("role") == "system":
+            system = msg.get("content", "")
+        else:
+            anthropic_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+    
+    return system, anthropic_messages
+
+
+def call_llm(messages: list, config: LLMConfig = None) -> str:
+    """
+    Universal LLM call function supporting multiple providers.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+                 (for Anthropic, supports standard OpenAI format with role="system")
+        config: LLMConfig instance (uses default if None)
+    
+    Returns:
+        str: LLM response text
+        
+    Raises:
+        ValueError: If provider is unsupported or configuration is invalid
+    """
+    if config is None:
+        config = LLMConfig()
+    
+    logger.debug(f"Calling LLM with {len(messages)} message(s), provider: {config.provider}, model: {config.model}")
+    
+    try:
+        client = LLMFactory.create_client(config)
+    except Exception as e:
+        logger.error(f"Failed to create LLM client: {e}", exc_info=True)
+        raise
+    
+    try:
+        # OpenAI-compatible providers (OpenAI, Ollama, Azure)
+        if config.provider in [LLMProvider.OPENAI.value, LLMProvider.OLLAMA.value, LLMProvider.AZURE.value]:
+            logger.debug(f"Making API call with temperature={config.temperature}, max_tokens={config.max_tokens}")
+            response = client.chat.completions.create(
+                model=config.model,
+                messages=messages,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                **config.extra_params
+            )
+            result = response.choices[0].message.content
+            logger.info(f"LLM call successful - {config.provider} returned {len(result)} characters")
+            return result
+        
+        # Anthropic provider (different API signature and message format)
+        elif config.provider == LLMProvider.ANTHROPIC.value:
+            logger.debug("Converting messages to Anthropic format")
+            system_prompt, anthropic_msgs = _prepare_anthropic_messages(messages)
+            
+            create_kwargs = {
+                "model": config.model,
+                "messages": anthropic_msgs,
+                "temperature": config.temperature,
+                "max_tokens": config.max_tokens,
+                **config.extra_params
+            }
+            
+            if system_prompt:
+                logger.debug(f"Adding system prompt ({len(system_prompt)} chars)")
+                create_kwargs["system"] = system_prompt
+            
+            logger.debug(f"Making Anthropic API call with {len(anthropic_msgs)} message(s)")
+            response = client.messages.create(**create_kwargs)
+            result = response.content[0].text
+            logger.info(f"LLM call successful - Anthropic returned {len(result)} characters")
+            return result
+        
+        else:
+            logger.error(f"Unsupported provider: {config.provider}")
+            raise ValueError(f"Unsupported provider: {config.provider}")
+    except Exception as e:
+        logger.error(f"LLM call failed with provider {config.provider}: {str(e)}", exc_info=True)
+        raise
+
+
+def get_default_config() -> LLMConfig:
+    """Get default LLM configuration from environment"""
+    return LLMConfig()

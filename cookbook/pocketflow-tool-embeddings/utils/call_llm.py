@@ -1,12 +1,12 @@
 import os
 from openai import OpenAI
 
-# No need for dotenv if using system environment variables
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize Ollama client
+client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
 def call_llm(prompt):    
     r = client.chat.completions.create(
-        model="gpt-4o",
+        model="llama3.2:3b",
         messages=[{"role": "user", "content": prompt}]
     )
     return r.choices[0].message.content

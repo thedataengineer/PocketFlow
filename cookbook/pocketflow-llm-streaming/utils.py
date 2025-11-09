@@ -2,11 +2,11 @@ from openai import OpenAI
 import os
 
 def stream_llm(prompt):
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "your-api-key"))
+    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
     # Make a streaming chat completion request
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="llama3.2:3b",
         messages=[
             {"role": "user", "content": prompt}
         ],

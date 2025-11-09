@@ -2,10 +2,10 @@ from openai import OpenAI
 import os
 
 def call_llm(messages):
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "your-api-key"))
+    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="llama3.2:3b",
         messages=messages,
         temperature=0.7
     )

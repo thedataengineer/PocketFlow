@@ -5,11 +5,11 @@ from pathlib import Path
 # Get the project root directory (parent of utils directory)
 ROOT_DIR = Path(__file__).parent.parent
 
-# Initialize OpenAI client with API key from environment
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize Ollama client
+client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
 def call_llm(prompt: str) -> str:
-    """Call OpenAI API to analyze text
+    """Call Ollama API with Llama 3.2 to analyze text
     
     Args:
         prompt (str): Input prompt for the model
@@ -19,7 +19,7 @@ def call_llm(prompt: str) -> str:
     """
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="llama3.2:3b",
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content

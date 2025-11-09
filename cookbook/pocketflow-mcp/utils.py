@@ -8,9 +8,9 @@ from mcp.client.stdio import stdio_client
 MCP = False
 
 def call_llm(prompt):    
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "your-api-key"))
+    client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
     r = client.chat.completions.create(
-        model="gpt-4o",
+        model="llama3.2:3b",
         messages=[{"role": "user", "content": prompt}]
     )
     return r.choices[0].message.content

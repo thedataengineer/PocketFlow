@@ -8,7 +8,7 @@ Or: python test_llm_config.py
 import os
 import unittest
 from unittest.mock import patch, MagicMock
-from llm_config_shared import LLMConfig, LLMProvider, LLMFactory, call_llm
+from llm_config_shared import LLMConfig, LLMProvider, LLMFactory, call_llm, _prepare_anthropic_messages
 
 
 class TestLLMConfig(unittest.TestCase):
@@ -99,6 +99,39 @@ class TestLLMConfig(unittest.TestCase):
         """Test that invalid temperature type is handled"""
         config = LLMConfig(temperature="not_a_number")
         self.assertEqual(config.temperature, 0.7)  # Should use default
+    
+    def test_max_tokens_validation(self):
+        """Test max_tokens validation"""
+        # Valid tokens
+        config = LLMConfig(max_tokens=1024)
+        self.assertEqual(config.max_tokens, 1024)
+        
+        # Invalid - negative should use default
+        config = LLMConfig(max_tokens=-100)
+        self.assertEqual(config.max_tokens, 2048)
+        
+        # Invalid - zero should use default
+        config = LLMConfig(max_tokens=0)
+        self.assertEqual(config.max_tokens, 2048)
+    
+    def test_max_tokens_invalid_type(self):
+        """Test that invalid max_tokens type is handled"""
+        config = LLMConfig(max_tokens="not_a_number")
+        self.assertEqual(config.max_tokens, 2048)  # Should use default
+    
+    def test_api_key_whitespace_stripped(self):
+        """Test that API keys with whitespace are stripped"""
+        config = LLMConfig(api_key="  sk-test-key  ")
+        self.assertEqual(config.api_key, "sk-test-key")
+    
+    def test_whitespace_only_api_key_rejected(self):
+        """Test that whitespace-only API keys are rejected"""
+        import os
+        os.environ["LLM_PROVIDER"] = "openai"
+        
+        with self.assertRaises(ValueError) as ctx:
+            LLMConfig(api_key="   ")
+        self.assertIn("API key", str(ctx.exception))
     
     def test_azure_api_version_config(self):
         """Test Azure API version configuration"""
@@ -197,6 +230,47 @@ class TestCallLLM(unittest.TestCase):
             
             # Should create a default config
             mock_create.assert_called_once()
+
+
+class TestAnthropicMessagePreparation(unittest.TestCase):
+    """Test Anthropic message format conversion"""
+    
+    def test_system_message_extraction(self):
+        """Test extraction of system message"""
+        messages = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "Hello"}
+        ]
+        system, msgs = _prepare_anthropic_messages(messages)
+        
+        self.assertEqual(system, "You are helpful")
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0]["role"], "user")
+    
+    def test_no_system_message(self):
+        """Test when there's no system message"""
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"}
+        ]
+        system, msgs = _prepare_anthropic_messages(messages)
+        
+        self.assertIsNone(system)
+        self.assertEqual(len(msgs), 2)
+    
+    def test_multiple_messages_preserved(self):
+        """Test that non-system messages are preserved"""
+        messages = [
+            {"role": "user", "content": "First"},
+            {"role": "assistant", "content": "Response"},
+            {"role": "user", "content": "Second"}
+        ]
+        system, msgs = _prepare_anthropic_messages(messages)
+        
+        self.assertEqual(len(msgs), 3)
+        self.assertEqual(msgs[0]["content"], "First")
+        self.assertEqual(msgs[1]["content"], "Response")
+        self.assertEqual(msgs[2]["content"], "Second")
 
 
 class TestIntegration(unittest.TestCase):

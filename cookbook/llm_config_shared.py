@@ -46,18 +46,18 @@ class LLMConfig:
         """
         self.provider = provider or os.getenv("LLM_PROVIDER", "ollama")
         self.model = model or os.getenv("LLM_MODEL")
-        self.api_key = api_key or os.getenv("LLM_API_KEY", "")
-        self.base_url = base_url or os.getenv("LLM_BASE_URL", "")
+        self.api_key = (api_key or os.getenv("LLM_API_KEY", "")).strip()
+        self.base_url = (base_url or os.getenv("LLM_BASE_URL", "")).strip()
         self.azure_api_version = azure_api_version or os.getenv("AZURE_API_VERSION", "2024-02-15-preview")
         self.temperature = self._validate_temperature(kwargs.get("temperature", 0.7))
-        self.max_tokens = int(kwargs.get("max_tokens", 2048))
+        self.max_tokens = self._validate_max_tokens(kwargs.get("max_tokens", 2048))
         self.extra_params = {k: v for k, v in kwargs.items() 
                             if k not in ["temperature", "max_tokens"]}
         
         self._set_provider_defaults()
         self._validate_credentials()
     
-    def _validate_temperature(self, temp):
+    def _validate_temperature(self, temp: Any) -> float:
         """Validate and constrain temperature value"""
         try:
             temp = float(temp)
@@ -69,7 +69,19 @@ class LLMConfig:
             logger.warning(f"Invalid temperature value {temp}, using default 0.7")
             return 0.7
 
-    def _set_provider_defaults(self):
+    def _validate_max_tokens(self, tokens: Any) -> int:
+        """Validate and set max_tokens value"""
+        try:
+            tokens = int(tokens)
+            if tokens < 1:
+                logger.warning(f"max_tokens {tokens} must be >= 1, using default 2048")
+                return 2048
+            return tokens
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid max_tokens value {tokens}, using default 2048")
+            return 2048
+
+    def _set_provider_defaults(self) -> None:
         """Set provider-specific default values"""
         if self.provider == LLMProvider.OLLAMA.value:
             self.base_url = self.base_url or "http://localhost:11434/v1"
@@ -90,14 +102,14 @@ class LLMConfig:
             self.api_key = self.api_key or os.getenv("AZURE_API_KEY", "")
             self.model = self.model or "gpt-4"
 
-    def _validate_credentials(self):
+    def _validate_credentials(self) -> None:
         """Validate that required credentials are present"""
         if self.provider == LLMProvider.OLLAMA.value:
             # Ollama doesn't require real API key, but needs base_url
             if not self.base_url:
                 raise ValueError(f"Ollama requires valid base_url (default: http://localhost:11434/v1)")
         elif self.provider in [LLMProvider.OPENAI.value, LLMProvider.ANTHROPIC.value, LLMProvider.AZURE.value]:
-            if not self.api_key or self.api_key == "":
+            if not self.api_key:
                 raise ValueError(
                     f"{self.provider.upper()} requires API key. "
                     f"Set {self._get_api_key_env_var()} environment variable"
@@ -106,7 +118,7 @@ class LLMConfig:
         if not self.model:
             raise ValueError(f"Model not specified for provider {self.provider}")
 
-    def _get_api_key_env_var(self):
+    def _get_api_key_env_var(self) -> str:
         """Get the environment variable name for the API key"""
         mapping = {
             LLMProvider.OPENAI.value: "OPENAI_API_KEY",
@@ -154,12 +166,39 @@ class LLMFactory:
             raise ValueError(f"Unsupported provider: {config.provider}")
 
 
-def call_llm(messages, config: LLMConfig = None) -> str:
+def _prepare_anthropic_messages(messages: list) -> tuple[str, list]:
+    """
+    Convert OpenAI-style messages to Anthropic format.
+    Anthropic uses separate 'system' parameter for system messages.
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+        
+    Returns:
+        Tuple of (system_prompt, messages_list)
+    """
+    system = None
+    anthropic_messages = []
+    
+    for msg in messages:
+        if msg.get("role") == "system":
+            system = msg.get("content", "")
+        else:
+            anthropic_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+    
+    return system, anthropic_messages
+
+
+def call_llm(messages: list, config: LLMConfig = None) -> str:
     """
     Universal LLM call function supporting multiple providers.
     
     Args:
         messages: List of message dicts with 'role' and 'content'
+                 (for Anthropic, supports standard OpenAI format with role="system")
         config: LLMConfig instance (uses default if None)
     
     Returns:
@@ -189,15 +228,22 @@ def call_llm(messages, config: LLMConfig = None) -> str:
             )
             return response.choices[0].message.content
         
-        # Anthropic provider (different API signature)
+        # Anthropic provider (different API signature and message format)
         elif config.provider == LLMProvider.ANTHROPIC.value:
-            response = client.messages.create(
-                model=config.model,
-                messages=messages,
-                temperature=config.temperature,
-                max_tokens=config.max_tokens,
+            system_prompt, anthropic_msgs = _prepare_anthropic_messages(messages)
+            
+            create_kwargs = {
+                "model": config.model,
+                "messages": anthropic_msgs,
+                "temperature": config.temperature,
+                "max_tokens": config.max_tokens,
                 **config.extra_params
-            )
+            }
+            
+            if system_prompt:
+                create_kwargs["system"] = system_prompt
+            
+            response = client.messages.create(**create_kwargs)
             return response.content[0].text
         
         else:

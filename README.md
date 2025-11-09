@@ -23,7 +23,7 @@ Pocket Flow is a [100-line](https://github.com/The-Pocket/PocketFlow/blob/main/p
 - **[Agentic Coding](https://zacharyhuang.substack.com/p/agentic-coding-the-most-fun-way-to)**: Let AI Agents (e.g., Cursor AI) build Agents—10x productivity boost!
 
 Get started with Pocket Flow:
-- To install, ```pip install pocketflow```or just copy the [source code](https://github.com/The-Pocket/PocketFlow/blob/main/pocketflow/__init__.py) (only 100 lines).
+- To get started, copy the [source code](https://github.com/The-Pocket/PocketFlow/blob/main/pocketflow/__init__.py) (only 100 lines).
 - To learn more, check out the [video tutorial](https://youtu.be/0Zr3NwcvpA0) and [documentation](https://the-pocket.github.io/PocketFlow/)
 - New: [Flexible LLM Provider Configuration](cookbook/LLM_PROVIDER_GUIDE.md) - seamlessly switch between OpenAI, Anthropic, Ollama, and more!
 - 🎉 Join our [Discord](https://discord.gg/hUHHE9Sa6T) to connect with other developers building with Pocket Flow!

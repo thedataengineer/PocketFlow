@@ -1,4 +1,9 @@
-from llm_config import LLMConfig, LLMFactory, LLMProvider
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import shared config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from llm_config_shared import call_llm as shared_call_llm, LLMConfig
 
 def call_llm(messages, config: LLMConfig = None):
     """
@@ -11,33 +16,7 @@ def call_llm(messages, config: LLMConfig = None):
     Returns:
         str: LLM response text
     """
-    if config is None:
-        config = LLMConfig()
-    
-    client = LLMFactory.create_client(config)
-    
-    if config.provider == LLMProvider.OPENAI.value or config.provider == LLMProvider.OLLAMA.value or config.provider == LLMProvider.AZURE.value:
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=messages,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            **config.extra_params
-        )
-        return response.choices[0].message.content
-    
-    elif config.provider == LLMProvider.ANTHROPIC.value:
-        response = client.messages.create(
-            model=config.model,
-            messages=messages,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            **config.extra_params
-        )
-        return response.content[0].text
-    
-    else:
-        raise ValueError(f"Unsupported provider: {config.provider}")
+    return shared_call_llm(messages, config)
 
 
 if __name__ == "__main__":
